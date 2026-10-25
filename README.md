@@ -1,15 +1,3 @@
-**SKUGGA is the runtime instrumentation sensor for [RESX](https://github.com/Ryftenius/RESX).**
-
-<h1 align="center">SKUGGA</h1>
-
-<p align="center"><b>Windows user-mode instrumentation that turns hooks, launch-gate injection, direct-syscall probes, and runtime self-maps into readable process behavior.</b></p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white" />
-  <img src="https://img.shields.io/badge/-00599C?logo=c&logoColor=white&style=for-the-badge" />
-  <img src="https://img.shields.io/badge/-00599C?logo=c%2B%2B&logoColor=white&style=for-the-badge" />
-</p>
-
 ***SKUGGA*** is a Windows userland **process-instrumentation** framework & tool designed for streamlined process API-hooking and quick triage. SKUGGA can launch a process and intercept its API calls without using debugger-API's via an injected DLL, that can be loaded in two ways (LoadLibrary & manual-mapping). It can automatically arm Nt*, module, Winsock and VEH hook surfaces before user-code starts. It streams structured telemetry that exposes & explains behaviour: API hits, clalers, stack/register context, memory changes, direct-syscalls and internal metadata.
 
 ![Research-backed Windows instrumentation workflow matrix](Docs/media/tooling-comparison.png)
@@ -230,11 +218,7 @@ The broader existing regression harness remains available:
 It was not rerun in full for this documentation update. Fresh validation is
 limited to the five captures and two regression scripts above.
 
-## DISCLAIMER
-
-SKUGGA is provided for authorized internal security engineering, defensive
-validation, and controlled research. Use it within the applicable authorization
-and license.
+<p/>
 
 ## LICENSE
 
