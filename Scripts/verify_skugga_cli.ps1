@@ -212,6 +212,7 @@ if ($Build) {
     $projects = @(
         "VCXProj\SKUGGA.vcxproj",
         "VCXProj\SkuggaRunner.vcxproj",
+        "VCXProj\SkuggaRunnerTests.vcxproj",
         "VCXProj\SkuggaTestTarget.vcxproj",
         "VCXProj\SkuggaLaunchGateTarget.vcxproj",
         "VCXProj\SkuggaSdkHost.vcxproj",
@@ -316,6 +317,12 @@ Run-Test "parser rejects registers before hook" {
 Run-Test "parser rejects hook type before hook" {
     $r = Run-Runner "hook type before hook" "--cli $(Quote-CmdArg $Target) --cli-probe-direct --int3 --hook NtQueryInformationProcess" @(2)
     Assert-Contains $r "must follow --api or --group" "hook type before hook was not rejected"
+}
+
+if ($ProbeModeAvailable) {
+    Run-Test "repeat counts across telemetry batches" {
+        Invoke-CheckedProcess -Name "repeat unit tests" -File (Join-Path $Bin "SkuggaRunnerTests.exe") -RawArgumentLine "--all" | Out-Null
+    }
 }
 
 if ($Platform -eq "Win32") {
@@ -566,7 +573,17 @@ if ($ProbeModeAvailable) {
 
     Run-Test "duplicate folding shows repeat count" {
         $r = Run-Runner "duplicate folding" "--cli $(Quote-CmdArg $Target) --cli-probe-duplicates --lhook NtQueryInformationProcess"
-        Assert-Contains $r "NtQueryInformationProcess x[2-9][0-9]* hit" "duplicate calls were not folded into x2/x3"
+        Assert-Contains $r "NtQueryInformationProcess x8 hit" "eight duplicate calls did not accumulate to x8"
+    }
+
+    Run-Test "result follows all event stacks" {
+        for ($attempt = 0; $attempt -lt 10; $attempt++) {
+            $r = Run-Runner "output ordering" "--cli $(Quote-CmdArg $Target) --cli-probe-direct --lhook NtQueryInformationProcess --stack-trace --sym"
+            Assert-Contains $r "(?m)^\s+#00 " "probe did not produce a stack"
+            Assert-Contains $r "\[skugga:result\] exit=0x00000000" "result was not printed"
+            Assert-NotContains $r "(?s)\[skugga:result\].*(?:\[skugga\] NtQueryInformationProcess|\n\s+#\d+)" "event or stack appeared after result"
+            Assert-NotContains $r "telemetry drain incomplete" "telemetry worker did not finish normally"
+        }
     }
 
     Run-Test "lazy AMSI group hooks after DLL load" {

@@ -408,6 +408,15 @@ int wmain(int argc, wchar_t **argv)
 
     DWORD exitCode = 0;
     GetExitCodeProcess(pi.hProcess, &exitCode);
+    // Child exit can precede rendering of the final telemetry packet. Join the
+    // worker before reading its state or printing the result; allow normal EOF
+    // first, with bounded cancellation for a stalled or never-connected client.
+    if (WaitForSingleObject(serverThread, 5000) != WAIT_OBJECT_0)
+    {
+        ctx.Stop.store(true, std::memory_order_release);
+        SKUGGA_SUPPORT::JoinStoppedPipeThread(serverThread);
+        ColorPrintf(LogColor::Warning, "[skugga] telemetry drain incomplete; worker stopped\n");
+    }
     TaggedPrintf(exitCode == 0 ? LogColor::Success : LogColor::Warning, "[skugga:result]",
                  " exit=0x%08lX events=%lu suppressed=%lu\n", exitCode,
                  static_cast<unsigned long>(ctx.HookEventCount.load(std::memory_order_acquire)),
@@ -422,9 +431,6 @@ int wmain(int argc, wchar_t **argv)
 
     CloseHandle(pi.hThread);
 
-    Sleep(500);
-    ctx.Stop.store(true, std::memory_order_release);
-    SKUGGA_SUPPORT::JoinStoppedPipeThread(serverThread);
     PrintSmartSummary(ctx, true);
     if (options.CliMode)
     {

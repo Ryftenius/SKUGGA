@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- Reuse the runner's production sources, compiler settings and dependencies. -->
+  <Import Project="SkuggaRunner.vcxproj" />
+  <PropertyGroup>
+    <ProjectName>SkuggaRunnerTests</ProjectName>
+    <TargetName>SkuggaRunnerTests</TargetName>
+    <TargetPath>$(OutDir)$(TargetName).exe</TargetPath>
+    <IntDir>$(MSBuildThisFileDirectory)..\obj\$(Configuration)\$(Platform)\SkuggaRunnerTests\</IntDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <ClCompile Remove="..\Injector\App\SkuggaRunner.cpp" />
+    <ClCompile Include="..\Testing\cli_repeat_tests.cpp" />
+  </ItemGroup>
+</Project>

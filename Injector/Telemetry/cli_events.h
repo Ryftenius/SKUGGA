@@ -10,7 +10,7 @@ namespace skugga::injector
     bool RuleApiIs(const SKUGGA_IPC_HOOK_POLICY_RULE &rule, const char *apiName) noexcept;
     const char *HookActionName(UINT32 action) noexcept;
     bool CliEventsEquivalentForRepeat(const SKUGGA_IPC_HOOK_EVENT &left, const SKUGGA_IPC_HOOK_EVENT &right) noexcept;
-    bool ShouldPrintRepeatMilestone(UINT32 repeat) noexcept;
+    bool ShouldPrintRepeatMilestone(UINT32 previous, UINT32 repeat) noexcept;
     bool ApplyCliRepeatAnnotation(ServerContext &ctx, SKUGGA_IPC_HOOK_EVENT &eventRecord) noexcept;
     bool SameDirectSyscallFold(const CliDetectionFoldState &fold, const SKUGGA_IPC_HOOK_EVENT &eventRecord) noexcept;
     bool ShouldPrintFoldedDirectSyscallDetection(ServerContext &ctx, const SKUGGA_IPC_HOOK_EVENT &eventRecord);

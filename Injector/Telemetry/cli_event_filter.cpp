@@ -51,10 +51,15 @@ namespace skugga::injector
         return dataSize == 0 || std::memcmp(left.DataSample, right.DataSample, dataSize) == 0;
     }
 
-    bool ShouldPrintRepeatMilestone(UINT32 repeat) noexcept
+    bool ShouldPrintRepeatMilestone(UINT32 previous, UINT32 repeat) noexcept
     {
-        return repeat <= 4 || repeat == 8 || repeat == 16 || repeat == 32 || repeat == 64 || repeat == 128 ||
-               repeat == 256 || repeat == 512 || repeat == 1024 || repeat == 2048 || repeat == 4095;
+        constexpr UINT32 milestones[] = {1, 2, 3, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4095};
+        for (UINT32 milestone : milestones)
+        {
+            if (previous < milestone && repeat >= milestone)
+                return true;
+        }
+        return false;
     }
 
     bool ApplyCliRepeatAnnotation(ServerContext &ctx, SKUGGA_IPC_HOOK_EVENT &eventRecord) noexcept
@@ -70,20 +75,13 @@ namespace skugga::injector
             return true;
         }
 
-        UINT32 repeat = ctx.LastPrintedCliRepeat;
-        if (runtimeRepeat > repeat)
-        {
-            repeat = runtimeRepeat;
-        }
-        else if (repeat < 0xFFFu)
-        {
-            ++repeat;
-        }
+        // Each wire record represents a separate batch, not a cumulative total.
+        const UINT32 repeat = std::min<UINT32>(0xFFFu, ctx.LastPrintedCliRepeat + runtimeRepeat);
 
         ctx.LastPrintedCliRepeat = repeat;
         ctx.LastPrintedCliEvent = eventRecord;
         eventRecord.CallerFlags = EncodeRepeatCount(eventRecord.CallerFlags, repeat);
-        if (!ShouldPrintRepeatMilestone(repeat) || repeat == ctx.LastPrintedCliRepeatMilestone)
+        if (!ShouldPrintRepeatMilestone(ctx.LastPrintedCliRepeatMilestone, repeat))
         {
             return false;
         }
