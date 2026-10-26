@@ -460,6 +460,20 @@ Run-Test "stack trace prints frames" {
     Assert-NotContains $r "\[internal\]" "default stacks leaked SKUGGA internals"
 }
 
+# The target's version.dll load makes the loader flip ntdll's .mrdata while it holds
+# the inverted function table lock that stack walking takes, on a thread that may
+# have no TLS vector yet.
+Run-Test "protect hook survives loader mrdata flips" {
+    $r = Run-Runner "protect hook" "--cli $(Quote-CmdArg $Target) --lhook NtProtectVirtualMemory"
+    Assert-Contains $r "\[skugga:result\] exit=0x00000000" "NtProtectVirtualMemory hook crashed the target"
+}
+
+Run-Test "protect stack trace does not deadlock the loader" {
+    $r = Run-Runner "protect stack trace" "--cli $(Quote-CmdArg $Target) --lhook NtProtectVirtualMemory --stack-trace"
+    Assert-NotContains $r "child wait timed out" "NtProtectVirtualMemory stack trace deadlocked the target"
+    Assert-Contains $r "\[skugga:result\] exit=0x00000000" "NtProtectVirtualMemory stack trace did not exit cleanly"
+}
+
 Run-Test "stack fabricate sanitizes SKUGGA frames" {
     $r = Run-Runner "stack fabricate" "--cli $(Quote-CmdArg $Target) --cli-probe-direct --lhook NtQueryInformationProcess --stack-trace --sym --sf"
     Assert-Contains $r "NtQueryInformationProcess hit" "stack-fabricate case did not print API hit"

@@ -26,6 +26,25 @@ namespace IC_STACKTRACE
     };
 
     bool Capture(Trace &out, std::uint32_t skip = 0, std::uint32_t maxFrames = (std::uint32_t)kMaxFrames) noexcept;
+
+    // Allocates the per-thread state SuppressCaptureScope uses. Call outside hooks:
+    // TlsAlloc takes the PEB lock.
+    void PrepareCaptureSuppression() noexcept;
+
+    // While alive, Capture on this thread returns an empty trace. Hooks use it where
+    // the loader may hold the inverted function table lock: RtlCaptureStackBackTrace
+    // takes that SRW lock shared, so walking the stack there deadlocks the thread.
+    class SuppressCaptureScope
+    {
+      public:
+        explicit SuppressCaptureScope(bool active) noexcept;
+        ~SuppressCaptureScope() noexcept;
+        SuppressCaptureScope(const SuppressCaptureScope &) = delete;
+        SuppressCaptureScope &operator=(const SuppressCaptureScope &) = delete;
+
+      private:
+        bool m_Active;
+    };
     struct ResolvedFrame
     {
         void *Ip;

@@ -2,6 +2,7 @@
 #include "../hooks/encoded_literal.h"
 
 #include <DbgHelp.h>
+#include <atomic>
 #include <cstring>
 #include <cwctype>
 
@@ -37,6 +38,13 @@ namespace IC_STACKTRACE
 #endif
         bool g_SymInit = false;
         DWORD g_symGuardTls = TLS_OUT_OF_INDEXES;
+        std::atomic<DWORD> g_CaptureSuppressTls{TLS_OUT_OF_INDEXES};
+
+        bool IsCaptureSuppressed() noexcept
+        {
+            const DWORD idx = g_CaptureSuppressTls.load(std::memory_order_acquire);
+            return idx != TLS_OUT_OF_INDEXES && TlsGetValue(idx) != nullptr;
+        }
 
         struct OwnExecutableRange
         {
@@ -518,9 +526,48 @@ namespace IC_STACKTRACE
         }
     } // namespace
 
+    void PrepareCaptureSuppression() noexcept
+    {
+        if (g_CaptureSuppressTls.load(std::memory_order_acquire) != TLS_OUT_OF_INDEXES)
+            return;
+
+        DWORD created = TlsAlloc();
+        if (created == TLS_OUT_OF_INDEXES)
+            return;
+
+        DWORD expected = TLS_OUT_OF_INDEXES;
+        if (!g_CaptureSuppressTls.compare_exchange_strong(expected, created, std::memory_order_acq_rel,
+                                                          std::memory_order_acquire))
+        {
+            TlsFree(created);
+        }
+    }
+
+    SuppressCaptureScope::SuppressCaptureScope(bool active) noexcept : m_Active(false)
+    {
+        const DWORD idx = g_CaptureSuppressTls.load(std::memory_order_acquire);
+        if (!active || idx == TLS_OUT_OF_INDEXES)
+            return;
+
+        auto depth = reinterpret_cast<ULONG_PTR>(TlsGetValue(idx));
+        m_Active = TlsSetValue(idx, reinterpret_cast<void *>(depth + 1)) != FALSE;
+    }
+
+    SuppressCaptureScope::~SuppressCaptureScope() noexcept
+    {
+        if (!m_Active)
+            return;
+
+        const DWORD idx = g_CaptureSuppressTls.load(std::memory_order_acquire);
+        auto depth = reinterpret_cast<ULONG_PTR>(TlsGetValue(idx));
+        TlsSetValue(idx, depth <= 1 ? nullptr : reinterpret_cast<void *>(depth - 1));
+    }
+
     bool Capture(Trace &out, std::uint32_t skip, std::uint32_t maxFrames) noexcept
     {
         out.Count = 0;
+        if (IsCaptureSuppressed())
+            return false;
         if (!EnsureRtlCapture())
             return false;
 

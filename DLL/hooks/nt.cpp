@@ -808,7 +808,7 @@ namespace IX_NT
         return memory;
     }
 
-    static bool TryResolveModuleTextRange(HMODULE module, ModuleRange &range) noexcept
+    static bool TryResolveModuleSectionRange(HMODULE module, const char *sectionName, ModuleRange &range) noexcept
     {
         auto *dos = reinterpret_cast<const IMAGE_DOS_HEADER *>(module);
         if (module == nullptr || dos->e_magic != IMAGE_DOS_SIGNATURE)
@@ -828,7 +828,7 @@ namespace IX_NT
         {
             char name[9]{};
             std::memcpy(name, section->Name, std::min<std::size_t>(sizeof(section->Name), 8));
-            if (std::strcmp(name, ".text") != 0)
+            if (std::strcmp(name, sectionName) != 0)
             {
                 continue;
             }
@@ -845,6 +845,30 @@ namespace IX_NT
         }
 
         return false;
+    }
+
+    static bool TryResolveModuleTextRange(HMODULE module, ModuleRange &range) noexcept
+    {
+        return TryResolveModuleSectionRange(module, ".text", range);
+    }
+
+    // ntdll's .mrdata, resolved at install. Empty on systems without the section.
+    static ModuleRange g_NtdllMrdata{};
+
+    // The loader flips ntdll's .mrdata writable while it holds the inverted function
+    // table lock (RtlInsertInvertedFunctionTable -> LdrProtectMrdata). Stack walking
+    // takes that lock, so these calls must not capture a trace. Uses only the
+    // pseudo-handle check: GetProcessId would issue another, possibly hooked, syscall.
+    static bool IsLoaderMrdataProtect(HANDLE processHandle, PVOID *baseAddress) noexcept
+    {
+        if (g_NtdllMrdata.Base == 0 || processHandle != reinterpret_cast<HANDLE>(static_cast<LONG_PTR>(-1)))
+        {
+            return false;
+        }
+
+        std::uint64_t base = 0;
+        return TryReadPointerArgument(baseAddress, base) &&
+               AddressWithinRange(reinterpret_cast<void *>(static_cast<std::uintptr_t>(base)), g_NtdllMrdata);
     }
 
     static bool IsCurrentProcessHandle(HANDLE processHandle) noexcept
@@ -916,15 +940,14 @@ namespace IX_NT
         return match;
     }
 
+    // Set by IxSetNtHook. Hook paths must not use function-local statics with runtime
+    // initializers: MSVC's thread-safe init guard reads implicit TLS on every call,
+    // and hooks run on threads whose TLS vector the loader has not allocated yet.
+    static SIZE_T g_NtPageSize = 0;
+
     static SIZE_T NtRuntimePageSize() noexcept
     {
-        static const SIZE_T pageSize = []() noexcept
-        {
-            SYSTEM_INFO info{};
-            GetSystemInfo(&info);
-            return static_cast<SIZE_T>(info.dwPageSize != 0 ? info.dwPageSize : 0x1000u);
-        }();
-        return pageSize;
+        return g_NtPageSize != 0 ? g_NtPageSize : 0x1000u;
     }
 
     static std::uintptr_t NtAlignDown(std::uintptr_t value, SIZE_T alignment) noexcept
@@ -1518,6 +1541,7 @@ namespace IX_NT
         if (!g_NtProtectVirtualMemoryStub)
             return STATUS_NOT_IMPLEMENTED;
         void *caller = _ReturnAddress();
+        IC_STACKTRACE::SuppressCaptureScope noStackWalk(IsLoaderMrdataProtect(ProcessHandle, BaseAddress));
         IX_RUNTIME_INTERNAL::IxNtHookPolicyDecision policy{};
         NTSTATUS status = STATUS_SUCCESS;
         bool skipOriginal = EvaluateNtPolicyPreCall("NtProtectVirtualMemory", caller, policy, status);
@@ -2711,6 +2735,15 @@ bool IxSetNtHook(NtHookCallback callback) noexcept
         IxDbgLog("IxSetNtHook: ntdll text range failed base=%p", ntdll);
         return false;
     }
+
+    if (!TryResolveModuleSectionRange(ntdll, ".mrdata", g_NtdllMrdata))
+    {
+        g_NtdllMrdata = ModuleRange{};
+    }
+    IC_STACKTRACE::PrepareCaptureSuppression();
+    SYSTEM_INFO systemInfo{};
+    GetSystemInfo(&systemInfo);
+    g_NtPageSize = systemInfo.dwPageSize != 0 ? systemInfo.dwPageSize : 0x1000u;
 
     if (!HasExportDirectory(ntdll))
     {
